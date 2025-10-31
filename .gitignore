@@ -1,0 +1,20 @@
+# Environment variables with sensitive data
+.env
+
+# Docker volumes
+/postgres_data/
+/redis_data/
+/agent_files/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# OS specific
+.DS_Store
+Thumbs.db
