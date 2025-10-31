@@ -1,23 +1,31 @@
 # PatchMon Docker Compose Configuration
 #
-# IMPORTANT: This file uses environment variables from .env file
-# Copy .env.example to .env and configure your settings before running
+# IMPORTANT: This file uses environment variables from the .env file
 #
-# Security Best Practices:
-# - All sensitive data is stored in .env (not committed to git)
-# - Services are isolated in internal networks
-# - Resource limits are enforced
-# - Health checks ensure service availability
-# - Non-root users where possible
+# Setup Instructions:
+# 1. Copy .env.example to .env:
+#    cp .env.example .env
 #
-# See README.md for detailed setup instructions
+# 2. Generate secure passwords:
+#    openssl rand -hex 64
+#
+# 3. Edit .env and update:
+#    - POSTGRES_PASSWORD (use generated password)
+#    - REDIS_PASSWORD (use generated password)
+#    - JWT_SECRET (use generated password)
+#    - SERVER_HOST (your server's IP or domain)
+#    - CORS_ORIGIN (full URL where you'll access PatchMon)
+#
+# 4. Start the stack:
+#    docker compose up -d
+#
+# See README.md for detailed documentation
 
 name: patchmon
 
 services:
   database:
     image: postgres:17-alpine
-    container_name: patchmon-database
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -25,51 +33,28 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - patchmon-internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
+      interval: 3s
       timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: ${POSTGRES_MEMORY_LIMIT}
-        reservations:
-          memory: ${POSTGRES_MEMORY_RESERVATION}
-    security_opt:
-      - no-new-privileges:true
+      retries: 7
 
   redis:
     image: redis:7-alpine
-    container_name: patchmon-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 200mb --maxmemory-policy allkeys-lru
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
-    networks:
-      - patchmon-internal
     healthcheck:
       test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
+      interval: 3s
       timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: ${REDIS_MEMORY_LIMIT}
-        reservations:
-          memory: ${REDIS_MEMORY_RESERVATION}
-    security_opt:
-      - no-new-privileges:true
+      retries: 7
 
   backend:
     image: ghcr.io/patchmon/patchmon-backend:latest
-    container_name: patchmon-backend
     restart: unless-stopped
+    # See PatchMon Docker README for additional environment variables and configuration instructions
     environment:
       LOG_LEVEL: ${LOG_LEVEL}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
@@ -78,13 +63,13 @@ services:
       SERVER_HOST: ${SERVER_HOST}
       SERVER_PORT: ${SERVER_PORT}
       CORS_ORIGIN: ${CORS_ORIGIN}
-      # Database Connection Pool Configuration
+      # Database Connection Pool Configuration (Prisma)
       DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT}
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT}
       DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT}
       DB_IDLE_TIMEOUT: ${DB_IDLE_TIMEOUT}
       DB_MAX_LIFETIME: ${DB_MAX_LIFETIME}
-      # Rate Limiting
+      # Rate Limiting (times in milliseconds)
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX}
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS}
@@ -98,66 +83,22 @@ services:
       REDIS_DB: ${REDIS_DB}
     volumes:
       - agent_files:/app/agents
-    networks:
-      - patchmon-internal
-      - patchmon-frontend
     depends_on:
       database:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: ${BACKEND_MEMORY_LIMIT}
-        reservations:
-          memory: ${BACKEND_MEMORY_RESERVATION}
-    security_opt:
-      - no-new-privileges:true
 
   frontend:
     image: ghcr.io/patchmon/patchmon-frontend:latest
-    container_name: patchmon-frontend
     restart: unless-stopped
     ports:
       - "${SERVER_PORT}:3000"
-    networks:
-      - patchmon-frontend
     depends_on:
       backend:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: ${FRONTEND_MEMORY_LIMIT}
-        reservations:
-          memory: ${FRONTEND_MEMORY_RESERVATION}
-    security_opt:
-      - no-new-privileges:true
-
-networks:
-  patchmon-internal:
-    driver: bridge
-    internal: true
-  patchmon-frontend:
-    driver: bridge
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
   agent_files:
-    driver: local
